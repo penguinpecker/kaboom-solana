@@ -119,9 +119,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = new PublicKey(wallet.address);
-    const result = await wallet.signTransaction(tx as any);
-    const signed = result.signedTransaction || result;
-    const raw = signed instanceof Uint8Array ? signed : (signed as any).serialize();
+    const serializedTx = tx.serialize({ requireAllSignatures: false });
+    const result = await (wallet as any).signTransaction(serializedTx);
+    let raw: Uint8Array;
+    if (result?.signedTransaction) {
+      raw = result.signedTransaction instanceof Uint8Array ? result.signedTransaction : new Uint8Array(result.signedTransaction);
+    } else if (result instanceof Uint8Array) {
+      raw = result;
+    } else if (result?.serialize) {
+      raw = result.serialize();
+    } else {
+      raw = new Uint8Array(Object.values(result));
+    }
     const sig = await connection.sendRawTransaction(raw);
     await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
     return sig;
