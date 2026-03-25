@@ -243,11 +243,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
 
       if (data.isMine) {
-        saveToken(null); gameTokenRef.current = null;
+        // Keep gameToken for cleanup — server needs it to settle
         // Auto-close game PDA after loss (settle already done by server)
         setTimeout(async () => {
           try {
-            const closeData = await api("/api/cleanup", { player: wallet?.address });
+            const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current }); saveToken(null); gameTokenRef.current = null;
             if (closeData.active && closeData.closeInstruction) {
               await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
             }
@@ -301,7 +301,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       // Auto-close game PDA after win
       setTimeout(async () => {
         try {
-          const closeData = await api("/api/cleanup", { player: wallet?.address });
+          const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current }); saveToken(null); gameTokenRef.current = null;
           if (closeData.active && closeData.closeInstruction) {
             await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
           }
