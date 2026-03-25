@@ -30,7 +30,7 @@ interface GameContextType {
 }
 
 const initialState: GameState = {
-  gameId: null, status: "idle", bet: 0.01, mineCount: 5,
+  gameId: null, status: "idle", bet: 0.005, mineCount: 3,
   revealedTiles: new Set(), safeTiles: new Set(), mineTiles: new Set(),
   optimisticTiles: new Set(), multiplier: 1.0, commitment: "", payout: 0,
   pendingTile: null, sessionPnl: 0, sessionGames: 0, error: null, lastTxHash: null,
