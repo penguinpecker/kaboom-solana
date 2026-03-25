@@ -1,133 +1,142 @@
 "use client";
 import { useGame } from "@/hooks/useGame";
-import { usePrivy } from "@privy-io/react-auth";
-import { useWallets, useCreateWallet } from "@privy-io/react-auth/solana";
+import { useModal } from "@/hooks/useModal";
 import { useConnection } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
+import { useWallets } from "@privy-io/react-auth/solana";
+
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { useVaultMaxBet } from "@/hooks/useContracts";
+import { GAME_CONFIG } from "@/lib/chain";
 import { useState, useEffect } from "react";
 
-export default function BetControls() {
-  const { state, setBet, setMineCount, startGame, cashOut, resetGame } = useGame();
+export function BetControls() {
+  const { state, setBet, setMineCount, startGame, cashOut } = useGame();
+  const { open } = useModal();
   const { authenticated, login } = usePrivy();
   const { wallets } = useWallets();
-  const wallet = wallets[0];
+  const publicKey = wallets[0]?.address ? { toBase58: () => wallets[0].address } : null;
+  const connected = authenticated && !!wallets[0];
+  
   const { connection } = useConnection();
-  const [balance, setBalance] = useState(0);
-
-  useEffect(() => {
-    if (!wallet?.address) return;
-    let cancelled = false;
-    const fetchBal = async () => {
-      try {
-        const { PublicKey } = await import("@solana/web3.js");
-        const bal = await connection.getBalance(new PublicKey(wallet.address));
-        if (!cancelled) setBalance(bal / LAMPORTS_PER_SOL);
-      } catch {}
-    };
-    fetchBal();
-    const id = setInterval(fetchBal, 10000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [wallet?.address, connection]);
+  const { data: maxBetWei } = useVaultMaxBet();
+  const [walletBalance, setWalletBalance] = useState(0);
 
   const isPlaying = state.status === "playing";
-  const isGameOver = state.status === "won" || state.status === "lost";
-  const isLoading = state.status === "starting" || state.status === "revealing" || state.status === "cashing" || state.status === "cleaning";
+  const isStarting = state.status === "starting";
+  const isCashing = state.status === "cashing";
+  const safeTilesTotal = GAME_CONFIG.GRID_SIZE - state.mineCount;
+  const progress = isPlaying ? Math.round((state.safeTiles.size / safeTilesTotal) * 100) : 0;
+  const maxBet = maxBetWei ? Number(maxBetWei) / LAMPORTS_PER_SOL : 999;
+
+  useEffect(() => {
+    if (!publicKey || !connection) return;
+    let cancelled = false;
+    const f = async () => {
+      try { const { PublicKey: PK } = await import("@solana/web3.js"); const b = await connection.getBalance(new PK(publicKey.toBase58())); if (!cancelled) setWalletBalance(b / LAMPORTS_PER_SOL); } catch {}
+    };
+    f(); const i = setInterval(f, 8000);
+    return () => { cancelled = true; clearInterval(i); };
+  }, [publicKey, connection]);
+
+  const handleStart = () => {
+    if (!authenticated) { login(); return; }
+    if (state.bet > walletBalance || state.bet > maxBet) return;
+    startGame();
+  };
 
   return (
-    <div className="space-y-4">
-      {state.error && (
-        <div className="rounded-lg bg-red-900/30 border border-red-800 p-3 text-sm text-red-300">
-          {state.error}
+    <div className="space-y-6">
+      <section className="bg-surface-container-low p-6 stealth-card border border-outline-variant/10">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="font-headline text-xs font-bold tracking-widest text-white uppercase">Engagement Parameters</h2>
+          <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 18 }}>tune</span>
         </div>
-      )}
-
-      {!isPlaying && !isGameOver && (
-        <>
+        <div className="space-y-4">
           <div>
-            <label className="text-sm text-zinc-400">Bet (SOL)</label>
-            <input
-              type="number"
-              step="0.001"
-              min="0.001"
-              max={balance}
-              value={state.bet}
-              onChange={(e) => setBet(parseFloat(e.target.value) || 0.005)}
-              disabled={isLoading}
-              className="mt-1 w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-white text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm text-zinc-400">Mines ({state.mineCount})</label>
-            <input
-              type="range"
-              min="1"
-              max="12"
-              value={state.mineCount}
-              onChange={(e) => setMineCount(parseInt(e.target.value))}
-              disabled={isLoading}
-              className="mt-1 w-full"
-            />
-            <div className="flex justify-between text-xs text-zinc-500">
-              <span>1</span><span>12</span>
+            <label className="font-headline text-[10px] uppercase tracking-widest text-on-surface-variant mb-2 block">Bet Amount (SOL)</label>
+            <div className="relative">
+              <input type="number" step="0.01" min="0.01" value={state.bet}
+                onChange={(e) => setBet(Number(e.target.value) || 0)}
+                disabled={isPlaying || isStarting}
+                className="w-full bg-surface-container-lowest border-none font-headline font-bold text-lg text-primary px-4 py-3 focus:ring-0 focus:outline-none disabled:opacity-50" />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                <button onClick={() => setBet(Math.max(0.01, state.bet / 2))} disabled={isPlaying || isStarting}
+                  className="bg-surface-container-highest px-3 py-1 text-[10px] font-headline font-bold text-on-surface hover:bg-primary/20 transition-colors disabled:opacity-30">1/2</button>
+                <button onClick={() => setBet(Math.min(maxBet, state.bet * 2))} disabled={isPlaying || isStarting}
+                  className="bg-surface-container-highest px-3 py-1 text-[10px] font-headline font-bold text-on-surface hover:bg-primary/20 transition-colors disabled:opacity-30">2X</button>
+              </div>
+            </div>
+            <div className="flex justify-between mt-1 text-[9px] font-headline text-on-surface-variant/40">
+              <span>Balance: {walletBalance.toFixed(2)} SOL</span>
+              <span>Max bet: {maxBet.toFixed(2)} SOL</span>
             </div>
           </div>
-        </>
+          <div>
+            <label className="font-headline text-[10px] uppercase tracking-widest text-on-surface-variant mb-2 block">Mine Density</label>
+            <div className="grid grid-cols-4 gap-2">
+              {GAME_CONFIG.MINE_OPTIONS.map((n) => (
+                <button key={n} onClick={() => setMineCount(n)} disabled={isPlaying || isStarting}
+                  className={`bg-surface-container-highest py-2 font-headline font-bold text-xs transition-all disabled:opacity-30 ${
+                    n === state.mineCount ? "text-white border border-primary/40" : "text-slate-400 hover:text-white"
+                  }`}>{n}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {!isPlaying && state.status !== "cashing" ? (
+          <button onClick={handleStart} disabled={isStarting || !authenticated}
+            className="w-full mt-8 py-5 bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-black text-lg tracking-[0.2em] glow-primary hover:brightness-125 transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50">
+            {isStarting ? (
+              <><span className="material-symbols-outlined animate-spin" style={{ fontSize: 24 }}>progress_activity</span>CONFIRMING...</>
+            ) : !authenticated ? (
+              <><span className="material-symbols-outlined" style={{ fontSize: 24 }}>account_balance_wallet</span>CONNECT WALLET</>
+            ) : (
+              <><span className="material-symbols-outlined mi" style={{ fontSize: 24 }}>bolt</span>ENGAGE BET</>
+            )}
+          </button>
+        ) : (
+          <button onClick={cashOut} disabled={isCashing || state.safeTiles.size === 0}
+            className="w-full mt-8 py-5 border-2 border-emerald text-emerald font-headline font-black text-lg tracking-[0.15em] hover:bg-emerald/10 transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50">
+            {isCashing ? (
+              <><span className="material-symbols-outlined animate-spin" style={{ fontSize: 24 }}>progress_activity</span>CASHING OUT...</>
+            ) : (
+              <><span className="material-symbols-outlined mi" style={{ fontSize: 24 }}>savings</span>
+              EXIT &amp; WITHDRAW — {(state.bet * state.multiplier).toFixed(2)} SOL</>
+            )}
+          </button>
+        )}
+      </section>
+
+      {state.commitment && state.status === "playing" && (
+        <section className="bg-surface-container-low p-4 border border-outline-variant/10">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="material-symbols-outlined text-emerald mi" style={{ fontSize: 16 }}>lock</span>
+            <span className="font-headline text-[10px] font-bold tracking-widest text-emerald uppercase">VRF Commitment</span>
+          </div>
+          <div className="font-mono text-[9px] text-primary/60 break-all select-all">{state.commitment}</div>
+        </section>
       )}
 
       {isPlaying && (
-        <div className="space-y-2">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-400">{state.multiplier.toFixed(2)}x</div>
-            <div className="text-sm text-zinc-400">
-              Payout: {(state.bet * state.multiplier).toFixed(4)} SOL
-            </div>
+        <section className="bg-surface-container-low p-4 border border-outline-variant/10">
+          <div className="flex justify-between mb-2">
+            <span className="font-headline text-[10px] text-on-surface-variant tracking-widest uppercase">Clear Progress</span>
+            <span className="font-headline text-sm text-primary font-bold">{progress}%</span>
           </div>
-          <button
-            onClick={cashOut}
-            disabled={state.safeTiles.size === 0 || state.status === "cashing"}
-            className="w-full rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {state.status === "cashing" ? "Cashing out..." : "Cash Out"}
-          </button>
+          <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-primary to-primary-container rounded-full transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </section>
+      )}
+
+      {state.pendingTile !== null && (
+        <div className="bg-primary/5 border border-primary/10 p-3 flex items-center gap-2 text-xs text-primary">
+          <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
+          Revealing tile {state.pendingTile}... waiting for on-chain confirmation
         </div>
       )}
-
-      {isGameOver && (
-        <div className="space-y-3 text-center">
-          {state.status === "won" ? (
-            <div className="text-green-400 font-bold">
-              Won {state.payout.toFixed(4)} SOL ({state.multiplier.toFixed(2)}x)
-            </div>
-          ) : (
-            <div className="text-red-400 font-bold">BOOM! Lost {state.bet} SOL</div>
-          )}
-          <button
-            onClick={resetGame}
-            className="w-full rounded-lg bg-zinc-700 py-2 text-sm text-white hover:bg-zinc-600 transition-colors"
-          >
-            Play Again
-          </button>
-        </div>
-      )}
-
-      {!isPlaying && !isGameOver && (
-        <button
-          onClick={authenticated ? startGame : login}
-          disabled={isLoading}
-          className="w-full rounded-lg bg-orange-600 py-3 text-sm font-bold text-white hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isLoading ? (state.status === "cleaning" ? "Cleaning up..." : "Starting...") : authenticated ? "Engage Bet" : "Connect to Play"}
-        </button>
-      )}
-
-      <div className="text-xs text-zinc-500 text-center">
-        {authenticated && wallet ? (
-          <span>Balance: {balance.toFixed(4)} SOL</span>
-        ) : (
-          <span>Connect wallet to play</span>
-        )}
-      </div>
     </div>
   );
 }

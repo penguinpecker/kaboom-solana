@@ -1,6 +1,6 @@
 "use client";
 import { Grid } from "@/components/game/Grid";
-import BetControls from "@/components/game/BetControls";
+import { BetControls } from "@/components/game/BetControls";
 import { useGame } from "@/hooks/useGame";
 import { useVaultBalance, useVaultHealth, useGameCounter } from "@/hooks/useContracts";
 export default function PlayPage() {

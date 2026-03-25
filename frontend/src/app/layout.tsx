@@ -4,9 +4,9 @@ import Web3Provider from "@/providers/Web3Provider";
 import { GameProvider } from "@/hooks/useGame";
 import { ModalProvider } from "@/hooks/useModal";
 import { ToastProvider } from "@/hooks/useToast";
-import Navbar from "@/components/layout/Navbar";
+import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import ModalRoot from "@/components/modals/ModalRoot";
+import { ModalRoot } from "@/components/modals/ModalRoot";
 
 export const metadata: Metadata = {
   title: "KABOOM! — On-Chain Mines on Solana",
