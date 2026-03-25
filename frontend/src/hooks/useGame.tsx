@@ -160,25 +160,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
       if (!data.active) { setState(p => ({ ...p, status: "idle", error: null })); return false; }
 
-      if (data.action === "close") {
-        await signAndSend(deserializeIx(data.instruction));
-        saveToken(null); gameTokenRef.current = null;
-        setState(p => ({ ...p, status: "idle", error: null }));
-        return true;
+      // Try close first (works if game is settled), then refund (works if expired)
+      if (data.closeInstruction) {
+        try { await signAndSend(deserializeIx(data.closeInstruction)); saveToken(null); gameTokenRef.current = null; setState(p => ({ ...p, status: "idle", error: null })); return true; } catch (e: any) { console.log("Close failed, trying refund:", e.message?.slice(0, 80)); }
       }
-
-      if (data.action === "refund_and_close") {
+      if (data.refundInstruction) {
         try { await signAndSend(deserializeIx(data.refundInstruction)); } catch (e: any) { console.log("Refund:", e.message?.slice(0, 80)); }
         await new Promise(r => setTimeout(r, 2000));
-        try { await signAndSend(deserializeIx(data.closeInstruction)); } catch (e: any) { console.log("Close:", e.message?.slice(0, 80)); }
+        if (data.closeInstruction) {
+          try { await signAndSend(deserializeIx(data.closeInstruction)); } catch (e: any) { console.log("Close after refund:", e.message?.slice(0, 80)); }
+        }
         saveToken(null); gameTokenRef.current = null;
         setState(p => ({ ...p, status: "idle", error: null }));
         return true;
-      }
-
-      if (data.action === "wait") {
-        setState(p => ({ ...p, status: "idle", error: "Game in progress. Wait " + data.secondsLeft + "s then try again." }));
-        return false;
       }
 
       setState(p => ({ ...p, status: "idle", error: null }));
@@ -250,6 +244,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       if (data.isMine) {
         saveToken(null); gameTokenRef.current = null;
+        // Auto-close game PDA after loss (settle already done by server)
+        setTimeout(async () => {
+          try {
+            const closeData = await api("/api/cleanup", { player: wallet?.address });
+            if (closeData.active && closeData.closeInstruction) {
+              await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
+            }
+          } catch {}
+        }, 3000);
         setState(p => {
           const nr = new Set(Array.from(p.revealedTiles)); nr.add(index);
           const nm = new Set(Array.from(p.mineTiles)); nm.add(index);
@@ -295,6 +298,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
 
       saveToken(null); gameTokenRef.current = null;
+      // Auto-close game PDA after win
+      setTimeout(async () => {
+        try {
+          const closeData = await api("/api/cleanup", { player: wallet?.address });
+          if (closeData.active && closeData.closeInstruction) {
+            await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
+          }
+        } catch {}
+      }, 3000);
 
       setState(p => {
         saveResult({ gameId: p.gameId?.toString() || "0", player: wallet?.address || "", won: true, bet: p.bet, payout, multiplier: p.multiplier, mineCount: p.mineCount, tilesCleared: p.safeTiles.size, txHash: "", timestamp: Date.now() });
