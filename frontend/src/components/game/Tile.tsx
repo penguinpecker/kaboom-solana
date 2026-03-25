@@ -7,7 +7,7 @@ export function Tile({ index }: { index: number }) {
   const isMine = state.mineTiles.has(index);
   const isRevealed = state.revealedTiles.has(index);
   const isPending = state.pendingTile === index;
-  const isOptimistic = state.optimisticTiles.has(index) && !isRevealed;
+  const isOptimistic = false;
   const isPlaying = state.status === "playing";
   const isGameOver = state.status === "won" || state.status === "lost";
 
