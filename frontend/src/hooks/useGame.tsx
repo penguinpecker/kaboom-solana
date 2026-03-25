@@ -4,7 +4,7 @@ import {
 } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useWallets, useCreateWallet, useSignAndSendTransaction } from "@privy-io/react-auth/solana";
+import { useWallets, useCreateWallet, useSignTransaction } from "@privy-io/react-auth/solana";
 import { Transaction, TransactionInstruction, PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
 import { GAME_CONFIG } from "@/lib/chain";
 
@@ -112,7 +112,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setMineCount = useCallback((count: number) => setState(prev => ({ ...prev, mineCount: count })), []);
 
   // Build, sign, and send a transaction using Privy wallet
-  const { signAndSendTransaction } = useSignAndSendTransaction();
+  const { signTransaction: privySignTx } = useSignTransaction();
 
   async function signAndSend(ix: TransactionInstruction): Promise<string> {
     if (!wallet) throw new Error("No wallet available");
@@ -121,8 +121,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = new PublicKey(wallet.address);
-    const result = await signAndSendTransaction({ transaction: tx.serialize({ requireAllSignatures: false }), wallet: wallet as any, chain: 'solana:devnet' as any });
-    const sig = (result as any)?.hash || (result as any)?.signature || String(result);
+    const { signedTransaction } = await privySignTx({ transaction: tx.serialize({ requireAllSignatures: false }), wallet: wallet as any });
+    const sig = await connection.sendRawTransaction(signedTransaction instanceof Uint8Array ? signedTransaction : Buffer.from(signedTransaction));
+    await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
     return sig;
   }
 
