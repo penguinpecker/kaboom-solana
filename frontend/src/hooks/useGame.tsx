@@ -4,7 +4,7 @@ import {
 } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useWallets, useCreateWallet } from "@privy-io/react-auth/solana";
+import { useWallets, useCreateWallet, useSignAndSendTransaction } from "@privy-io/react-auth/solana";
 import { Transaction, TransactionInstruction, PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
 import { GAME_CONFIG } from "@/lib/chain";
 
@@ -112,6 +112,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setMineCount = useCallback((count: number) => setState(prev => ({ ...prev, mineCount: count })), []);
 
   // Build, sign, and send a transaction using Privy wallet
+  const { signAndSendTransaction } = useSignAndSendTransaction();
+
   async function signAndSend(ix: TransactionInstruction): Promise<string> {
     if (!wallet) throw new Error("No wallet available");
     const tx = new Transaction().add(ix);
@@ -119,20 +121,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = new PublicKey(wallet.address);
-    const serializedTx = tx.serialize({ requireAllSignatures: false });
-    const result = await (wallet as any).signTransaction(serializedTx);
-    let raw: Uint8Array;
-    if (result?.signedTransaction) {
-      raw = result.signedTransaction instanceof Uint8Array ? result.signedTransaction : new Uint8Array(result.signedTransaction);
-    } else if (result instanceof Uint8Array) {
-      raw = result;
-    } else if (result?.serialize) {
-      raw = result.serialize();
-    } else {
-      raw = new Uint8Array(Object.values(result));
-    }
-    const sig = await connection.sendRawTransaction(raw);
-    await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+    const result = await signAndSendTransaction({ transaction: tx.serialize({ requireAllSignatures: false }), wallet: wallet as any });
+    const sig = (result as any)?.hash || (result as any)?.signature || String(result);
     return sig;
   }
 
