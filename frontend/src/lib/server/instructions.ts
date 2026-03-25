@@ -35,3 +35,21 @@ export function buildSettleGame(player: PublicKey, mineLayout: number, salt: Buf
   salt.copy(data, 10);
   return new TransactionInstruction({ programId: PROGRAM_ID, keys: [{ pubkey: VAULT_PDA, isSigner: false, isWritable: false }, { pubkey: gamePda, isSigner: false, isWritable: true }, { pubkey: house.publicKey, isSigner: true, isWritable: false }], data });
 }
+
+export function buildCashOutData(player: PublicKey): { instruction: TransactionInstruction } {
+  const [gamePda] = getGamePda(player);
+  const data = Buffer.alloc(8);
+  disc("cash_out").copy(data, 0);
+  return {
+    instruction: new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: VAULT_PDA, isSigner: false, isWritable: true },
+        { pubkey: gamePda, isSigner: false, isWritable: true },
+        { pubkey: player, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data,
+    }),
+  };
+}

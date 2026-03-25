@@ -1,9 +1,11 @@
 "use client";
 import {
-  createContext, useContext, useState, useCallback, useEffect, ReactNode,
+  createContext, useContext, useState, useCallback, useEffect, ReactNode, useMemo,
 } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { Transaction, TransactionInstruction, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { useConnection } from "@solana/wallet-adapter-react";
+import { usePrivy } from "@privy-io/react-auth";
+import { useWallets, useCreateWallet } from "@privy-io/react-auth/solana";
+import { Transaction, TransactionInstruction, PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
 import { GAME_CONFIG } from "@/lib/chain";
 
 type GameStatus = "idle" | "starting" | "playing" | "revealing" | "cashing" | "won" | "lost" | "cleaning";
@@ -27,6 +29,8 @@ interface GameContextType {
   setMineCount: (count: number) => void; startGame: () => void;
   revealTile: (index: number) => void; cashOut: () => void;
   resetGame: () => void; gameHistory: GameResult[];
+  walletAddress: string | null; login: () => void; logout: () => void;
+  authenticated: boolean;
 }
 
 const initialState: GameState = {
@@ -77,9 +81,7 @@ function deserializeIx(ix: any): TransactionInstruction {
   return new TransactionInstruction({
     programId: new PublicKey(ix.programId),
     keys: ix.keys.map((k: any) => ({
-      pubkey: new PublicKey(k.pubkey),
-      isSigner: k.isSigner,
-      isWritable: k.isWritable,
+      pubkey: new PublicKey(k.pubkey), isSigner: k.isSigner, isWritable: k.isWritable,
     })),
     data: Buffer.from(ix.data, "base64"),
   });
@@ -89,118 +91,91 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GameState>(initialState);
   const [gameHistory, setGameHistory] = useState<GameResult[]>([]);
   const { connection } = useConnection();
-  const wallet = useWallet();
+  const { authenticated, login, logout } = usePrivy();
+  const { wallets } = useWallets();
+  const { createWallet } = useCreateWallet();
+
+  // Get the first Solana wallet (embedded or external)
+  const wallet = useMemo(() => wallets[0] || null, [wallets]);
+  const walletAddress = wallet?.address || null;
 
   useEffect(() => { setGameHistory(loadHistory()); }, []);
+
+  // Auto-create Solana wallet if logged in but no wallet
+  useEffect(() => {
+    if (authenticated && wallets.length === 0) {
+      createWallet().catch(() => {});
+    }
+  }, [authenticated, wallets.length, createWallet]);
 
   const setBet = useCallback((bet: number) => setState(prev => ({ ...prev, bet })), []);
   const setMineCount = useCallback((count: number) => setState(prev => ({ ...prev, mineCount: count })), []);
 
-  // Sign and send a transaction via wallet
+  // Build, sign, and send a transaction using Privy wallet
   async function signAndSend(ix: TransactionInstruction): Promise<string> {
-    if (!wallet.publicKey || !wallet.signTransaction) throw new Error("Wallet not connected");
+    if (!wallet) throw new Error("No wallet available");
     const tx = new Transaction().add(ix);
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
-    tx.feePayer = wallet.publicKey;
-    const signed = await wallet.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
+    tx.feePayer = new PublicKey(wallet.address);
+    const result = await wallet.signTransaction(tx as any);
+    const signed = result.signedTransaction || result;
+    const raw = signed instanceof Uint8Array ? signed : (signed as any).serialize();
+    const sig = await connection.sendRawTransaction(raw);
     await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
     return sig;
   }
 
-  // Clean up a stuck game PDA — refund + close
+  // Auto-cleanup stuck game PDA
   async function cleanupStuckGame(): Promise<boolean> {
-    if (!wallet.publicKey) return false;
+    if (!wallet) return false;
     setState(prev => ({ ...prev, status: "cleaning", error: "Cleaning up stuck game..." }));
     try {
-      const data = await api("/api/cleanup", { player: wallet.publicKey.toBase58() });
+      const data = await api("/api/cleanup", { player: wallet.address });
       if (!data.active) return false;
-
-      // Try refund_expired (returns bet to player)
-      try {
-        await signAndSend(deserializeIx(data.refundInstruction));
-        console.log("Refund confirmed");
-      } catch (e: any) {
-        console.log("Refund skipped:", e.message?.slice(0, 80));
-      }
-
-      // Wait a moment then close the PDA (reclaim rent)
+      try { await signAndSend(deserializeIx(data.refundInstruction)); } catch (e: any) { console.log("Refund skipped:", e.message?.slice(0, 80)); }
       await new Promise(r => setTimeout(r, 2000));
-      try {
-        await signAndSend(deserializeIx(data.closeInstruction));
-        console.log("Game PDA closed");
-      } catch (e: any) {
-        console.log("Close skipped:", e.message?.slice(0, 80));
-      }
-
+      try { await signAndSend(deserializeIx(data.closeInstruction)); } catch (e: any) { console.log("Close skipped:", e.message?.slice(0, 80)); }
       setState(prev => ({ ...prev, status: "idle", error: null }));
       return true;
     } catch (e: any) {
-      console.error("Cleanup failed:", e);
       setState(prev => ({ ...prev, status: "idle", error: "Cleanup failed: " + e.message }));
       return false;
     }
   }
 
   const startGame = useCallback(async () => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
-      setState(prev => ({ ...prev, error: "Connect wallet first" }));
-      return;
-    }
+    if (!authenticated) { login(); return; }
+    if (!wallet) { setState(prev => ({ ...prev, error: "Wallet not ready. Try again." })); return; }
     setState(prev => ({ ...prev, status: "starting", error: null }));
 
     try {
       const betLamports = Math.round(state.bet * LAMPORTS_PER_SOL);
       let commitData: any;
       try {
-        commitData = await api("/api/commit", {
-          player: wallet.publicKey.toBase58(),
-          mineCount: state.mineCount,
-          betLamports,
-        });
-      } catch (commitErr: any) {
-        // If stuck game exists, auto-cleanup and retry
-        if (commitErr.message?.includes("Close it first") || commitErr.message?.includes("needsCleanup")) {
-          const cleaned = await cleanupStuckGame();
-          if (cleaned) {
-            // Retry commit after cleanup
-            commitData = await api("/api/commit", {
-              player: wallet.publicKey.toBase58(),
-              mineCount: state.mineCount,
-              betLamports,
-            });
-          } else {
-            throw new Error("Could not clean up stuck game. Try again.");
-          }
-        } else {
-          throw commitErr;
-        }
+        commitData = await api("/api/commit", { player: wallet.address, mineCount: state.mineCount, betLamports });
+      } catch (err: any) {
+        if (err.message?.includes("Close it first") || err.message?.includes("active game")) {
+          if (await cleanupStuckGame()) {
+            commitData = await api("/api/commit", { player: wallet.address, mineCount: state.mineCount, betLamports });
+          } else throw new Error("Could not clean up stuck game");
+        } else throw err;
       }
 
-      const ix = deserializeIx(commitData.instruction);
-      const sig = await signAndSend(ix);
+      const sig = await signAndSend(deserializeIx(commitData.instruction));
 
       setState(prev => ({
-        ...prev,
-        gameId: BigInt(Date.now()),
-        status: "playing",
-        commitment: commitData.commitment,
-        lastTxHash: sig,
-        error: null,
-        revealedTiles: new Set(),
-        safeTiles: new Set(),
-        mineTiles: new Set(),
-        multiplier: 1.0,
-        payout: 0,
-        pendingTile: null,
+        ...prev, gameId: BigInt(Date.now()), status: "playing",
+        commitment: commitData.commitment, lastTxHash: sig, error: null,
+        revealedTiles: new Set(), safeTiles: new Set(), mineTiles: new Set(),
+        multiplier: 1.0, payout: 0, pendingTile: null,
       }));
     } catch (err: any) {
       console.error("Start game failed:", err);
       setState(prev => ({ ...prev, status: "idle", error: err.message }));
     }
-  }, [wallet, state.bet, state.mineCount, connection]);
+  }, [authenticated, wallet, state.bet, state.mineCount, connection, login]);
 
   const revealTile = useCallback(async (index: number) => {
     if (state.status !== "playing" || state.pendingTile !== null) return;
@@ -208,17 +183,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, pendingTile: index, status: "revealing" }));
 
     try {
-      const data = await api("/api/reveal", {
-        player: wallet.publicKey?.toBase58(),
-        tileIndex: index,
-      });
+      const data = await api("/api/reveal", { player: wallet?.address, tileIndex: index });
 
       if (data.isMine) {
         setState(prev => {
-          const newRevealed = new Set(Array.from(prev.revealedTiles));
-          const newMines = new Set(Array.from(prev.mineTiles));
-          newRevealed.add(index); newMines.add(index);
-          saveResult({ gameId: prev.gameId?.toString() || "0", player: wallet.publicKey?.toBase58() || "", won: false, bet: prev.bet, payout: 0, multiplier: 0, mineCount: prev.mineCount, tilesCleared: prev.safeTiles.size, txHash: data.signature || "", timestamp: Date.now() });
+          const newRevealed = new Set(Array.from(prev.revealedTiles)); newRevealed.add(index);
+          const newMines = new Set(Array.from(prev.mineTiles)); newMines.add(index);
+          saveResult({ gameId: prev.gameId?.toString() || "0", player: wallet?.address || "", won: false, bet: prev.bet, payout: 0, multiplier: 0, mineCount: prev.mineCount, tilesCleared: prev.safeTiles.size, txHash: data.signature || "", timestamp: Date.now() });
           return { ...prev, status: "lost" as GameStatus, revealedTiles: newRevealed, mineTiles: newMines, pendingTile: null, lastTxHash: data.signature, sessionGames: prev.sessionGames + 1, sessionPnl: prev.sessionPnl - prev.bet };
         });
         setGameHistory(loadHistory());
@@ -227,38 +198,53 @@ export function GameProvider({ children }: { children: ReactNode }) {
           const newRevealed = new Set(Array.from(prev.revealedTiles)); newRevealed.add(index);
           const newSafe = new Set(Array.from(prev.safeTiles)); newSafe.add(index);
           const newMult = calcMultiplier(newSafe.size, prev.mineCount);
-          const totalSafe = GAME_CONFIG.GRID_SIZE - prev.mineCount;
-          return { ...prev, status: newSafe.size >= totalSafe ? "won" as GameStatus : "playing" as GameStatus, revealedTiles: newRevealed, safeTiles: newSafe, multiplier: newMult, pendingTile: null, lastTxHash: data.signature };
+          return { ...prev, status: newSafe.size >= GAME_CONFIG.GRID_SIZE - prev.mineCount ? "won" as GameStatus : "playing" as GameStatus, revealedTiles: newRevealed, safeTiles: newSafe, multiplier: newMult, pendingTile: null, lastTxHash: data.signature };
         });
       }
     } catch (err: any) {
       console.error("Reveal failed:", err);
       setState(prev => ({ ...prev, pendingTile: null, status: "playing", error: err.message }));
     }
-  }, [state.status, state.pendingTile, state.revealedTiles, wallet.publicKey]);
+  }, [state.status, state.pendingTile, state.revealedTiles, wallet?.address]);
 
   const cashOut = useCallback(async () => {
     if (state.status !== "playing" || state.safeTiles.size === 0) return;
     setState(prev => ({ ...prev, status: "cashing" }));
     try {
       const payout = state.bet * state.multiplier;
-      const settleData = await api("/api/settle", { player: wallet.publicKey?.toBase58() });
+
+      // Phase 1: Get cash_out instruction, player signs it
+      const cashData = await api("/api/settle", { player: wallet?.address });
+      if (cashData.phase === "cashout") {
+        const cashSig = await signAndSend(deserializeIx(cashData.instruction));
+        console.log("Cash out tx:", cashSig);
+        await new Promise(r => setTimeout(r, 2000));
+        // Phase 2: Server settles with proof
+        try {
+          await api("/api/settle", { player: wallet?.address, phase: "settle" });
+        } catch { /* settle may fail if already done, that's ok */ }
+      }
+
       setState(prev => {
-        saveResult({ gameId: prev.gameId?.toString() || "0", player: wallet.publicKey?.toBase58() || "", won: true, bet: prev.bet, payout, multiplier: prev.multiplier, mineCount: prev.mineCount, tilesCleared: prev.safeTiles.size, txHash: settleData.signature || "", timestamp: Date.now() });
-        return { ...prev, status: "won" as GameStatus, payout, lastTxHash: settleData.signature, sessionGames: prev.sessionGames + 1, sessionPnl: prev.sessionPnl + (payout - prev.bet) };
+        saveResult({ gameId: prev.gameId?.toString() || "0", player: wallet?.address || "", won: true, bet: prev.bet, payout, multiplier: prev.multiplier, mineCount: prev.mineCount, tilesCleared: prev.safeTiles.size, txHash: "", timestamp: Date.now() });
+        return { ...prev, status: "won" as GameStatus, payout, sessionGames: prev.sessionGames + 1, sessionPnl: prev.sessionPnl + (payout - prev.bet) };
       });
       setGameHistory(loadHistory());
     } catch (err: any) {
       console.error("Cash out failed:", err);
       setState(prev => ({ ...prev, status: "playing", error: err.message }));
     }
-  }, [state.status, state.safeTiles, state.bet, state.multiplier, wallet.publicKey]);
+  }, [state.status, state.safeTiles, state.bet, state.multiplier, wallet?.address]);
 
   const resetGame = useCallback(() => {
     setState(prev => ({ ...initialState, bet: prev.bet, mineCount: prev.mineCount, sessionPnl: prev.sessionPnl, sessionGames: prev.sessionGames }));
   }, []);
 
-  return <GameContext.Provider value={{ state, setBet, setMineCount, startGame, revealTile, cashOut, resetGame, gameHistory }}>{children}</GameContext.Provider>;
+  return (
+    <GameContext.Provider value={{ state, setBet, setMineCount, startGame, revealTile, cashOut, resetGame, gameHistory, walletAddress, login, logout, authenticated }}>
+      {children}
+    </GameContext.Provider>
+  );
 }
 
 export function useGame() {

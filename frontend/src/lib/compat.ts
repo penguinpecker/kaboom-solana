@@ -1,35 +1,54 @@
-// Compatibility layer so pages can use the same API as the Somnia version
-// without rewriting every page from scratch
-
-import { useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { usePrivy } from "@privy-io/react-auth";
+import { useWallets, useCreateWallet } from "@privy-io/react-auth/solana";
+import { useConnection } from "@solana/wallet-adapter-react";
+import { useState, useEffect } from "react";
 
 /**
- * Drop-in replacement for viem's formatEther
- * Works with both bigint (lamports) and number
+ * Format lamports to SOL string (drop-in for wagmi's formatEther)
  */
 export function formatEther(value: bigint | number | undefined): string {
-  if (value === undefined || value === null) return "0";
-  const num = typeof value === "bigint" ? Number(value) : value;
-  return (num / LAMPORTS_PER_SOL).toString();
+  if (value === undefined) return "0";
+  return (Number(value) / LAMPORTS_PER_SOL).toString();
 }
 
 /**
- * Drop-in replacement for wagmi's useAccount
+ * Drop-in replacement for wagmi's useAccount — now uses Privy
  */
 export function useAccount() {
-  const { publicKey, connected } = useWallet();
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const wallet = wallets[0];
   return {
-    address: publicKey?.toBase58() as `0x${string}` | undefined,
-    isConnected: connected,
+    address: wallet?.address || undefined,
+    isConnected: authenticated && !!wallet,
   };
 }
 
 /**
  * Drop-in replacement for wagmi's useBalance
- * Note: actual balance fetching happens in components that need it
  */
 export function useBalance({ address }: { address?: string }) {
-  // Stub — balance is fetched directly in components via connection.getBalance
-  return { data: undefined };
+  const { connection } = useConnection();
+  const [data, setData] = useState<{ value: bigint; formatted: string } | undefined>();
+
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { PublicKey } = await import("@solana/web3.js");
+        const balance = await connection.getBalance(new PublicKey(address));
+        if (!cancelled) {
+          setData({
+            value: BigInt(balance),
+            formatted: (balance / LAMPORTS_PER_SOL).toFixed(4),
+          });
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [address, connection]);
+
+  return { data };
 }
