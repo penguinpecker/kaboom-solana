@@ -1,22 +1,15 @@
 import { randomBytes, createHash } from "crypto";
+import type { SessionData } from "./session";
 
-export interface GameSession {
-  player: string;
-  mineCount: number;
-  mineLayout: number;
-  salt: Buffer;
-  commitment: Buffer;
-  createdAt: number;
-  reveals: Set<number>;
-  settled: boolean;
-}
+const GRID_SIZE = 16;
+const MIN_MINES = 1;
+const MAX_MINES = 12;
 
-// In-memory store — persists across warm invocations on same Vercel instance
-const activeGames = new Map<string, GameSession>();
+export { GRID_SIZE, MIN_MINES, MAX_MINES };
 
-function generateMineLayout(mineCount: number, gridSize: number): number {
+function generateMineLayout(mineCount: number): number {
   const tiles: number[] = [];
-  for (let i = 0; i < gridSize; i++) tiles.push(i);
+  for (let i = 0; i < GRID_SIZE; i++) tiles.push(i);
   for (let i = tiles.length - 1; i > 0; i--) {
     const maxVal = 256 - (256 % (i + 1));
     let rand: number;
@@ -34,47 +27,36 @@ function generateMineLayout(mineCount: number, gridSize: number): number {
 function computeCommitment(mineLayout: number, mineCount: number, salt: Buffer): Buffer {
   const layoutBytes = Buffer.alloc(2);
   layoutBytes.writeUInt16LE(mineLayout);
-  const preimage = Buffer.concat([layoutBytes, Buffer.from([mineCount]), salt]);
-  return createHash("sha256").update(preimage).digest();
+  return createHash("sha256").update(Buffer.concat([layoutBytes, Buffer.from([mineCount]), salt])).digest();
 }
 
-export function createGameSession(player: string, mineCount: number, gridSize: number): { commitment: Buffer; session: GameSession } {
-  if (activeGames.has(player)) throw new Error("Player already has an active game session.");
-  const mineLayout = generateMineLayout(mineCount, gridSize);
+export function createSession(player: string, mineCount: number): { session: SessionData; commitment: Buffer } {
+  if (mineCount < MIN_MINES || mineCount > MAX_MINES) throw new Error("Invalid mine count");
+  const mineLayout = generateMineLayout(mineCount);
   const salt = randomBytes(32);
   const commitment = computeCommitment(mineLayout, mineCount, salt);
-  const session: GameSession = { player, mineCount, mineLayout, salt, commitment, createdAt: Date.now(), reveals: new Set(), settled: false };
-  activeGames.set(player, session);
-  return { commitment, session };
+  const session: SessionData = {
+    player,
+    mineCount,
+    mineLayout,
+    salt: salt.toString("hex"),
+    commitment: commitment.toString("hex"),
+    reveals: [],
+    createdAt: Date.now(),
+  };
+  return { session, commitment };
 }
 
-export function getGameSession(player: string): GameSession | undefined {
-  return activeGames.get(player);
-}
-
-export function checkTile(player: string, tileIndex: number, gridSize: number): { isMine: boolean; session: GameSession } {
-  const session = activeGames.get(player);
-  if (!session) throw new Error("No active game for player");
-  if (session.settled) throw new Error("Game already settled");
-  if (tileIndex < 0 || tileIndex >= gridSize) throw new Error("Invalid tile index");
-  if (session.reveals.has(tileIndex)) throw new Error("Tile already revealed");
+export function checkTile(session: SessionData, tileIndex: number): { isMine: boolean; updatedSession: SessionData } {
+  if (tileIndex < 0 || tileIndex >= GRID_SIZE) throw new Error("Invalid tile index");
+  if (session.reveals.includes(tileIndex)) throw new Error("Tile already revealed");
   const isMine = (session.mineLayout & (1 << tileIndex)) !== 0;
-  session.reveals.add(tileIndex);
-  return { isMine, session };
+  return {
+    isMine,
+    updatedSession: { ...session, reveals: [...session.reveals, tileIndex] },
+  };
 }
 
-export function settleSession(player: string): GameSession {
-  const session = activeGames.get(player);
-  if (!session) throw new Error("No active game for player");
-  session.settled = true;
-  activeGames.delete(player);
-  return session;
-}
-
-export function removeSession(player: string): void {
-  activeGames.delete(player);
-}
-
-export function getActiveGameCount(): number {
-  return activeGames.size;
+export function getSessionSalt(session: SessionData): Buffer {
+  return Buffer.from(session.salt, "hex");
 }

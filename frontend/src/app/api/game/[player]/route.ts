@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGameSession } from "@/lib/server/game";
+import { PublicKey } from "@solana/web3.js";
+import { getGamePda } from "@/lib/server/config";
+import { getConnection } from "@/lib/server/solana";
 
 export async function GET(_req: NextRequest, { params }: { params: { player: string } }) {
-  const session = getGameSession(params.player);
-  if (!session) return NextResponse.json({ active: false });
-  return NextResponse.json({ active: true, mineCount: session.mineCount, reveals: Array.from(session.reveals), commitment: session.commitment.toString("hex"), createdAt: session.createdAt });
+  try {
+    const pk = new PublicKey(params.player);
+    const [gamePda] = getGamePda(pk);
+    const info = await getConnection().getAccountInfo(gamePda);
+    if (!info) return NextResponse.json({ active: false });
+    return NextResponse.json({ active: true, gamePda: gamePda.toBase58() });
+  } catch {
+    return NextResponse.json({ active: false });
+  }
 }

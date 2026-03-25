@@ -13,15 +13,9 @@ export function getHouseAuthority(): Keypair {
 export const PROGRAM_ID = new PublicKey(
   process.env.PROGRAM_ID || "2EaLenCErRF3oKnDB1X6zFzo489JHKBMkFPoSRFcYYr7"
 );
-
 export const SOLANA_RPC = process.env.SOLANA_RPC || "https://api.devnet.solana.com";
-
 export const VAULT_SEED = Buffer.from("kaboom_vault_v2");
 export const GAME_SEED = Buffer.from("kaboom_game_v2");
-export const GRID_SIZE = 16;
-export const MIN_MINES = 1;
-export const MAX_MINES = 12;
-
 export const [VAULT_PDA] = PublicKey.findProgramAddressSync([VAULT_SEED], PROGRAM_ID);
 
 export function getGamePda(player: PublicKey): [PublicKey, number] {

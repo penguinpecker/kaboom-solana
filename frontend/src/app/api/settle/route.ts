@@ -1,57 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
-import { createHash } from "crypto";
-import { PROGRAM_ID, VAULT_PDA, getGamePda, getHouseAuthority } from "@/lib/server/config";
+import { PublicKey } from "@solana/web3.js";
+import { getSessionSalt } from "@/lib/server/game";
 import { sendHouseTx } from "@/lib/server/solana";
-import { getGameSession, settleSession } from "@/lib/server/game";
-import { buildSettleGame } from "@/lib/server/instructions";
-
-function disc(name: string): Buffer {
-  return createHash("sha256").update("global:" + name).digest().subarray(0, 8);
-}
+import { buildCashOut, buildSettleGame, serializeIx } from "@/lib/server/instructions";
+import { decryptSession } from "@/lib/server/session";
 
 export async function POST(req: NextRequest) {
   try {
-    const { player, phase } = await req.json();
-    if (!player) return NextResponse.json({ error: "Missing player" }, { status: 400 });
-    let pk: PublicKey;
-    try { pk = new PublicKey(player); } catch { return NextResponse.json({ error: "Invalid pubkey" }, { status: 400 }); }
+    const body = await req.json();
+    const { player, gameToken, phase } = body;
 
-    const session = getGameSession(player);
-    if (!session) return NextResponse.json({ error: "No active session" }, { status: 404 });
+    if (!player || !gameToken) {
+      return NextResponse.json({ error: "Missing player or gameToken" }, { status: 400 });
+    }
+
+    let pk: PublicKey;
+    try { pk = new PublicKey(player); }
+    catch { return NextResponse.json({ error: "Invalid player pubkey" }, { status: 400 }); }
+
+    let session;
+    try { session = decryptSession(gameToken); }
+    catch { return NextResponse.json({ error: "Invalid game token" }, { status: 400 }); }
+
+    if (session.player !== player) {
+      return NextResponse.json({ error: "Token player mismatch" }, { status: 403 });
+    }
 
     if (phase === "settle") {
-      // Phase 2: Server settles with proof (after player cashed out)
-      const s = settleSession(player);
-      const signature = await sendHouseTx([buildSettleGame(pk, s.mineLayout, s.salt)]);
-      return NextResponse.json({ signature, mineLayout: s.mineLayout, verified: true });
+      // Phase 2: Server settles with proof
+      const salt = getSessionSalt(session);
+      const settleIx = buildSettleGame(pk, session.mineLayout, salt);
+      const signature = await sendHouseTx([settleIx]);
+      return NextResponse.json({ signature, mineLayout: session.mineLayout, verified: true });
     }
 
     // Phase 1: Return cash_out instruction for player to sign
-    const [gamePda] = getGamePda(pk);
-    const data = Buffer.alloc(8);
-    disc("cash_out").copy(data, 0);
-    const instruction = new TransactionInstruction({
-      programId: PROGRAM_ID,
-      keys: [
-        { pubkey: VAULT_PDA, isSigner: false, isWritable: true },
-        { pubkey: gamePda, isSigner: false, isWritable: true },
-        { pubkey: pk, isSigner: true, isWritable: true },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      ],
-      data,
-    });
-
+    const cashIx = buildCashOut(pk);
     return NextResponse.json({
       phase: "cashout",
-      instruction: {
-        programId: instruction.programId.toBase58(),
-        keys: instruction.keys.map(k => ({ pubkey: k.pubkey.toBase58(), isSigner: k.isSigner, isWritable: k.isWritable })),
-        data: Buffer.from(instruction.data).toString("base64"),
-      },
+      instruction: serializeIx(cashIx),
     });
   } catch (err: any) {
-    console.error("Settle/cashout failed:", err.message);
+    console.error("Settle error:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
