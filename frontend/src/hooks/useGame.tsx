@@ -121,7 +121,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = new PublicKey(wallet.address);
-    const result = await signAndSendTransaction({ transaction: tx.serialize({ requireAllSignatures: false }), wallet: wallet as any });
+    const result = await signAndSendTransaction({ transaction: tx.serialize({ requireAllSignatures: false }), wallet: wallet as any, chain: 'solana:devnet' as any });
     const sig = (result as any)?.hash || (result as any)?.signature || String(result);
     return sig;
   }
