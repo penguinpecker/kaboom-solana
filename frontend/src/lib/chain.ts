@@ -30,3 +30,5 @@ export function getGamePda(player: PublicKey): [PublicKey, number] {
 export function getPlayerStatsPda(player: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([Buffer.from("stats"), player.toBuffer()], PROGRAM_ID);
 }
+
+export const HOUSE_SERVER = process.env.NEXT_PUBLIC_HOUSE_SERVER || "http://localhost:3001";
