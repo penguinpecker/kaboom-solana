@@ -75,8 +75,23 @@ export function useDepositToVault() {
   const [isSuccess, setIsSuccess] = useState(false);
 
   const deposit = async (amt?: string) => {
-    // Deposit is admin-only via CLI for now
-    window.open("https://faucet.solana.com", "_blank");
+    try {
+      setIsPending(true);
+      const sol = parseFloat(amt || "0");
+      if (sol <= 0) return;
+      const res = await fetch("/api/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: sol }),
+      });
+      const data = await res.json();
+      if (data.instruction) {
+        setIsConfirming(true);
+      }
+    } catch {} finally {
+      setIsPending(false);
+      setIsConfirming(false);
+    }
   };
 
   return { deposit, isPending, isConfirming, isSuccess };
