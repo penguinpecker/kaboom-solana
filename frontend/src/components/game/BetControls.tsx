@@ -68,7 +68,7 @@ export function BetControls() {
               </div>
             </div>
             <div className="flex justify-between mt-1 text-[9px] font-headline text-on-surface-variant/40">
-              <span>Balance: {walletBalance.toFixed(2)} SOL</span>
+              <span>Balance: {walletBalance.toFixed(3)} SOL</span>
               <span>Max bet: {maxBet.toFixed(2)} SOL</span>
             </div>
           </div>
@@ -103,7 +103,7 @@ export function BetControls() {
               <><span className="material-symbols-outlined animate-spin" style={{ fontSize: 24 }}>progress_activity</span>CASHING OUT...</>
             ) : (
               <><span className="material-symbols-outlined mi" style={{ fontSize: 24 }}>savings</span>
-              EXIT &amp; WITHDRAW — {(state.bet * state.multiplier).toFixed(2)} SOL</>
+              EXIT &amp; WITHDRAW — {(state.bet * state.multiplier).toFixed(4)} SOL</>
             )}
           </button>
         )}
