@@ -257,16 +257,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
 
       if (data.isMine) {
-        // Keep gameToken for cleanup — server needs it to settle
-        // Auto-close game PDA after loss (settle already done by server)
-        setTimeout(async () => {
-          try {
-            const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current });
-            if (closeData.active && closeData.closeInstruction) {
-              await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
-            }
-          } catch {}
-        }, 3000);
+        // Auto-close: reveal response includes closeInstruction when mine hit
+        if (data.closeInstruction) {
+          setTimeout(async () => {
+            try { await signAndSend(deserializeIx(data.closeInstruction)); saveToken(null); gameTokenRef.current = null; } catch {}
+          }, 2000);
+        } else {
+          saveToken(null); gameTokenRef.current = null;
+        }
         setState(p => {
           const nr = new Set(Array.from(p.revealedTiles)); nr.add(index);
           const nm = new Set(Array.from(p.mineTiles)); nm.add(index);
