@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 
 export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || "https://api.devnet.solana.com";
 export const EXPLORER = "https://solscan.io";
-export const PROGRAM_ID = new PublicKey("2EaLenCErRF3oKnDB1X6zFzo489JHKBMkFPoSRFcYYr7");
+export const PROGRAM_ID = new PublicKey("Gw7rMAw65i3vZXrZjfbTgCe1uRjQw5VtY5Qc6Ksxrwc4");
 
 const VAULT_SEED = Buffer.from("kaboom_vault_v2");
 const GAME_SEED = Buffer.from("kaboom_game_v2");

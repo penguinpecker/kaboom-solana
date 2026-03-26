@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 
-declare_id!("2EaLenCErRF3oKnDB1X6zFzo489JHKBMkFPoSRFcYYr7");
+declare_id!("Gw7rMAw65i3vZXrZjfbTgCe1uRjQw5VtY5Qc6Ksxrwc4");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // KABOOM! v2 — Provably Fair On-Chain Mines (Solana)

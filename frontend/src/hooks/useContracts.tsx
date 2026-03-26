@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 
-const VAULT_PDA_STR = "8eEFtEsTWNyaTgCqfwGxZxUVKVyo1brDqv9oLtiKoqgB";
+const VAULT_PDA_STR = "5AE1Ge893UhJCUxPZj4dAP4VMR2hGQBP9fHL6TiZpxAw";
 
 export function useContracts() {
   const { connection } = useConnection();

@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-kaboom = "2EaLenCErRF3oKnDB1X6zFzo489JHKBMkFPoSRFcYYr7"
+kaboom = "Gw7rMAw65i3vZXrZjfbTgCe1uRjQw5VtY5Qc6Ksxrwc4"
 
 [programs.mainnet]
 kaboom = "CnNBErznkGXRzy6zJ5Hm72JwgETjnKt36VbzS8HiP7oE"
