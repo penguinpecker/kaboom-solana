@@ -160,20 +160,34 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
       if (!data.active) { setState(p => ({ ...p, status: "idle", error: null })); return false; }
 
-      // Try close first (works if game is settled), then refund (works if expired)
+      // Try close first (works if settled), then refund+close (works if expired)
       if (data.closeInstruction) {
-        try { await signAndSend(deserializeIx(data.closeInstruction)); saveToken(null); gameTokenRef.current = null; setState(p => ({ ...p, status: "idle", error: null })); return true; } catch (e: any) { console.log("Close failed, trying refund:", e.message?.slice(0, 80)); }
+        try {
+          await signAndSend(deserializeIx(data.closeInstruction));
+          saveToken(null); gameTokenRef.current = null;
+          setState(p => ({ ...p, status: "idle", error: null }));
+          return true;
+        } catch (e: any) {
+          console.log("Close failed:", e.message?.slice(0, 80));
+        }
       }
       if (data.refundInstruction) {
-        try { await signAndSend(deserializeIx(data.refundInstruction)); } catch (e: any) { console.log("Refund:", e.message?.slice(0, 80)); }
-        await new Promise(r => setTimeout(r, 2000));
-        if (data.closeInstruction) {
-          try { await signAndSend(deserializeIx(data.closeInstruction)); } catch (e: any) { console.log("Close after refund:", e.message?.slice(0, 80)); }
-        }
-        saveToken(null); gameTokenRef.current = null;
-        setState(p => ({ ...p, status: "idle", error: null }));
-        return true;
+        try {
+          await signAndSend(deserializeIx(data.refundInstruction));
+          await new Promise(r => setTimeout(r, 3000));
+          if (data.closeInstruction) {
+            try {
+              await signAndSend(deserializeIx(data.closeInstruction));
+              saveToken(null); gameTokenRef.current = null;
+              setState(p => ({ ...p, status: "idle", error: null }));
+              return true;
+            } catch (e2: any) { console.log("Close after refund:", e2.message?.slice(0, 80)); }
+          }
+        } catch (e: any) { console.log("Refund:", e.message?.slice(0, 80)); }
       }
+      // Nothing worked — keep token, user can retry
+      setState(p => ({ ...p, status: "idle", error: "Cleanup in progress. Wait 5 seconds and try again." }));
+      return false;
 
       setState(p => ({ ...p, status: "idle", error: null }));
       return false;
@@ -247,7 +261,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Auto-close game PDA after loss (settle already done by server)
         setTimeout(async () => {
           try {
-            const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current }); saveToken(null); gameTokenRef.current = null;
+            const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current });
             if (closeData.active && closeData.closeInstruction) {
               await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
             }
@@ -301,7 +315,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       // Auto-close game PDA after win
       setTimeout(async () => {
         try {
-          const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current }); saveToken(null); gameTokenRef.current = null;
+          const closeData = await api("/api/cleanup", { player: wallet?.address, gameToken: gameTokenRef.current });
           if (closeData.active && closeData.closeInstruction) {
             await signAndSend(deserializeIx(closeData.closeInstruction)).catch(() => {});
           }

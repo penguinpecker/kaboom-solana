@@ -7,20 +7,6 @@ export function getConnection(): Connection {
   return _conn;
 }
 
-async function pollConfirm(conn: Connection, sig: string, ms = 30000): Promise<void> {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    try {
-      const s = await conn.getSignatureStatus(sig);
-      if (s?.value?.confirmationStatus === "confirmed" || s?.value?.confirmationStatus === "finalized") {
-        if (s.value.err) throw new Error("Tx failed: " + JSON.stringify(s.value.err));
-        return;
-      }
-    } catch (e: any) { if (e.message?.includes("Tx failed")) throw e; }
-    await new Promise(r => setTimeout(r, 1500));
-  }
-}
-
 export async function sendHouseTx(instructions: TransactionInstruction[]): Promise<string> {
   const conn = getConnection();
   const house = getHouseAuthority();
@@ -33,14 +19,10 @@ export async function sendHouseTx(instructions: TransactionInstruction[]): Promi
   tx.lastValidBlockHeight = lastValidBlockHeight;
   tx.feePayer = house.publicKey;
   tx.sign(house);
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 2 });
-  try { await pollConfirm(conn, sig); } catch {}
+  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
+  // Do NOT poll — Vercel functions timeout at 10s. Just return the signature.
   return sig;
 }
 
 export async function getVaultBalance(): Promise<number> { return getConnection().getBalance(VAULT_PDA); }
-
-export async function playerGameExists(player: PublicKey): Promise<boolean> {
-  const [g] = getGamePda(player);
-  return (await getConnection().getAccountInfo(g)) !== null;
-}
+export async function playerGameExists(player: PublicKey): Promise<boolean> { const [g] = getGamePda(player); return (await getConnection().getAccountInfo(g)) !== null; }
