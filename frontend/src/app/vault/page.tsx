@@ -3,7 +3,7 @@ import { formatEther, useAccount, useBalance } from "@/lib/compat";
 import { useVaultBalance, useVaultMaxBet, useVaultMaxPayout, useVaultHealth, useRiskLevel, useDepositToVault, useGameCounter } from "@/hooks/useContracts";
 import { useToast } from "@/hooks/useToast";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CONTRACTS } from "@/lib/chain";
 
 const RISK_LABELS = ["Healthy", "Caution", "Emergency"];
@@ -19,14 +19,20 @@ export default function VaultPage() {
   const { data: gameCount } = useGameCounter();
   const { deposit, isPending, isConfirming, isSuccess } = useDepositToVault();
   const [fundAmt, setFundAmt] = useState("1");
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const fmt = (v: bigint | undefined) => v ? Number(formatEther(v)).toFixed(2) : "—";
   const healthNum = health ? Number(health) : 0;
   const riskIdx = riskLevel !== undefined ? Number(riskLevel) : 0;
 
-  const handleDeposit = () => {
-    deposit(fundAmt);
+  const handleDeposit = async () => {
     toast("Depositing " + fundAmt + " SOL...", "primary");
+    await deposit(fundAmt);
+    if (!isPending && !isConfirming) {
+      setShowSuccess(true);
+      toast("Successfully deposited " + fundAmt + " SOL!", "primary");
+      setTimeout(() => setShowSuccess(false), 4000);
+    }
   };
 
   return (
@@ -78,6 +84,12 @@ export default function VaultPage() {
               className="w-full py-3 bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xs tracking-widest hover:brightness-110 active:scale-95 transition-all disabled:opacity-50">
               {isPending || isConfirming ? "CONFIRMING..." : "DEPOSIT SOL"}
             </button>
+            {showSuccess && (
+              <div className="mt-3 p-4 bg-emerald/10 border border-emerald/30 rounded-lg text-center">
+                <span className="font-headline text-lg font-bold text-emerald block mb-1">DEPOSIT CONFIRMED</span>
+                <span className="font-headline text-xs text-emerald/70">{fundAmt} SOL sent to vault</span>
+              </div>
+            )}
           </div>
 
           {/* Contracts */}
