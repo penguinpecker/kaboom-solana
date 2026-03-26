@@ -2,7 +2,6 @@
 
 A fully on-chain, provably fair 4×4 mines game built on Solana. Players place bets, reveal tiles, and avoid mines — with every game cryptographically verified using commit-reveal proofs.
 
-**🎮 Play now:** [kaboom-solana.vercel.app](https://kaboom-solana.vercel.app)
 
 ![KABOOM Gameplay](https://img.shields.io/badge/status-live_on_devnet-green) ![Solana](https://img.shields.io/badge/chain-Solana-purple) ![License](https://img.shields.io/badge/license-MIT-blue)
 
