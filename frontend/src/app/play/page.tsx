@@ -58,7 +58,7 @@ export default function PlayPage() {
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="font-headline text-[10px] text-slate-400">Chain</span>
-                <span className="font-headline text-[10px] text-on-surface-variant">Solana Mainnet</span>
+                <span className="font-headline text-[10px] text-on-surface-variant">Solana Devnet</span>
               </div>
             </div>
           </section>

@@ -64,7 +64,7 @@ export default function VaultPage() {
             <InfoRow label="Hash" value="keccak256" valueColor="text-primary" />
             <InfoRow label="Fairness" value="Commit-Reveal" valueColor="text-primary" />
             <InfoRow label="House Edge" value="2.00%" valueColor="text-primary" />
-            <InfoRow label="Chain" value="Solana Mainnet" valueColor="text-primary" />
+            <InfoRow label="Chain" value="Solana Devnet" valueColor="text-primary" />
           </div>
         </div>
 
@@ -87,7 +87,7 @@ export default function VaultPage() {
               {Object.entries(CONTRACTS).map(([name, addr]) => (
                 <div key={name}>
                   <span className="font-headline text-[10px] text-on-surface-variant/30 block">{name}</span>
-                  <a href={`https://solscan.io/address/${addr}`} target="_blank" rel="noreferrer" className="font-mono text-[9px] text-primary hover:underline">
+                  <a href={`https://solscan.io/account/${addr}?cluster=devnet`} target="_blank" rel="noreferrer" className="font-mono text-[9px] text-primary hover:underline">
                     {addr.slice(0, 8)}…{addr.slice(-6)}
                   </a>
                 </div>
