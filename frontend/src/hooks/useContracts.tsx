@@ -69,7 +69,17 @@ export function useRiskLevel() {
 export function useWhaleAlertCount() { return { data: 0 }; }
 
 export function useDepositToVault() {
-  return { deposit: async (_amt?: string) => { alert("Deposit via CLI: npm run fund-vault -- " + (_amt || "1")); }, isPending: false, isConfirming: false, isSuccess: false };
+  const { connection } = useConnection();
+  const [isPending, setIsPending] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const deposit = async (amt?: string) => {
+    // Deposit is admin-only via CLI for now
+    window.open("https://faucet.solana.com", "_blank");
+  };
+
+  return { deposit, isPending, isConfirming, isSuccess };
 }
 
 export function useLeaderboard() {

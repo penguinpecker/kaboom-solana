@@ -76,7 +76,7 @@ export default function VaultPage() {
               className="w-full bg-surface-container-lowest border-none font-headline font-bold text-lg text-primary px-3 py-2 mb-3 outline-none" />
             <button onClick={handleDeposit} disabled={isPending || isConfirming}
               className="w-full py-3 bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xs tracking-widest hover:brightness-110 active:scale-95 transition-all disabled:opacity-50">
-              {isPending || isConfirming ? "CONFIRMING..." : "DEPOSIT SOL"}
+              {isPending || isConfirming ? "CONFIRMING..." : "FUND VAULT (Admin Only)"}
             </button>
           </div>
 
